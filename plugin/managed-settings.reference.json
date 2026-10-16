@@ -94,7 +94,13 @@
       "Edit(.claude/settings.local.json)",
       "Edit(.mcp.json)",
       "Edit(scripts/**)",
-      "Edit(.git/**)"
+      "Edit(.git/**)",
+      "Artifact",
+      "DesignSync",
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh repo fork:*)"
     ]
   }
 }

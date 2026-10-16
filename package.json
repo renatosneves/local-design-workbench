@@ -1,12 +1,13 @@
 {
-  "name": "claude-code-design",
+  "name": "local-design-workbench",
   "version": "1.0.0",
   "main": "index.js",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/security.test.mjs",
+    "test:browser": "node --test test/browser-security.test.mjs"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +15,9 @@
   "description": "",
   "devDependencies": {
     "pptxgenjs": "^4.0.1",
-    "puppeteer": "^24.41.0"
+    "puppeteer": "25.14.0"
+  },
+  "overrides": {
+    "image-size": "2.0.4"
   }
 }

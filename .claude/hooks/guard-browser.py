@@ -72,6 +72,7 @@ def check_url(url):
         return
     parts = urlsplit(url)
     if parts.scheme == "file":
+        deny("file previews bypass response security headers; use restricted loopback preview")
         if parts.netloc not in ("", "localhost"):
             deny("file:// URL with a host")
         path = os.path.realpath(unquote(parts.path))

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import {exportPaths, browserArgs, isolatePage, saveNewFile} from './security.mjs';
 // Export an HTML deck to PPTX via per-slide screenshots.
 // Usage: node export-pptx.mjs <input.html> [output.pptx] [--jpeg 0.85]
 
@@ -18,11 +18,9 @@ const jpegIdx = flags.indexOf('--jpeg');
 const jpegQuality = jpegIdx >= 0 && flags[jpegIdx + 1] ? parseFloat(flags[jpegIdx + 1]) : null;
 const useJpeg = jpegQuality !== null;
 
-const inputAbs = path.resolve(process.cwd(), inputArg);
-const output = outputArg
-  ? path.resolve(process.cwd(), outputArg)
-  : inputAbs.replace(/\.html?$/i, '.pptx');
-
+const validated=exportPaths(inputArg, outputArg, '.pptx');
+const inputAbs=validated.source;
+const output=validated.destination;
 const tmp = mkdtempSync(path.join(tmpdir(), 'pptx-'));
 
 console.log(`input: ${inputAbs}`);
@@ -44,31 +42,10 @@ try {
   process.exit(1);
 }
 
-// Hosts the artifact may load from. Request interception covers HTTP(S); the resolver rule also
-// covers WebSockets and anything else interception does not see (IP literals are still blocked by
-// interception, since resolver rules never apply to them).
-const ALLOWED_HOSTS = ['unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
-const launchArgs = [
-  '--host-resolver-rules=MAP * ~NOTFOUND, ' + ALLOWED_HOSTS.map((h) => `EXCLUDE ${h}`).join(', '),
-];
-// --no-sandbox is only needed when running as root in a container; gate it on CI.
-if (process.env.CI) launchArgs.push('--no-sandbox');
-const browser = await puppeteer.launch({ args: launchArgs });
+const browser = await puppeteer.launch({ args: browserArgs, ...(process.env.DESIGN_CHROME_PATH ? {executablePath:process.env.DESIGN_CHROME_PATH} : {}) });
+try {
 const page = await browser.newPage();
-// Only the artifact's own directory may be read over file://.
-const artifactDir = pathToFileURL(path.dirname(inputAbs) + path.sep).toString();
-
-// Block every outbound request except the artifact's directory and the pinned CDNs it may use.
-await page.setRequestInterception(true);
-page.on('request', (req) => {
-  const u = req.url();
-  const ok = u.startsWith(artifactDir) || u.startsWith('data:') || u.startsWith('blob:')
-    || u.startsWith('https://unpkg.com/')
-    || u.startsWith('https://fonts.googleapis.com/') || u.startsWith('https://fonts.gstatic.com/');
-  if (ok) req.continue(); else req.abort();
-});
-// A popup would be a fresh page with no interception installed: close it.
-page.on('popup', (p) => { p.close().catch(() => {}); });
+await isolatePage(page, validated.root);
 await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 await page.goto(pathToFileURL(inputAbs).toString(), { waitUntil: 'networkidle0' });
 
@@ -132,8 +109,9 @@ for (let i = 0; i < total; i++) {
 }
 
 console.log('');
-await browser.close();
-await pres.writeFile({ fileName: output });
+
+saveNewFile(output, await pres.write({outputType:'nodebuffer'}));
 
 const stat = await import('node:fs/promises').then((m) => m.stat(output));
 console.log(`wrote ${output} (${(stat.size / 1024).toFixed(1)} KB)`);
+} finally { await browser.close(); }

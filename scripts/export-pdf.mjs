@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import {exportPaths, browserArgs, isolatePage, saveNewFile} from './security.mjs';
 // Export an HTML artifact to PDF via headless Chromium.
 // Usage: node export-pdf.mjs <input.html> [output.pdf]
 
@@ -13,38 +13,19 @@ if (!input) {
   process.exit(1);
 }
 
-const inAbs = path.resolve(process.cwd(), input);
-const outAbs = path.resolve(process.cwd(), output || input.replace(/\.html?$/i, '.pdf'));
+const validated = exportPaths(input, output, '.pdf');
+const inAbs=validated.source;
+const outAbs=validated.destination;
 
 console.log(`input:  ${inAbs}`);
 console.log(`output: ${outAbs}`);
 
-// Hosts the artifact may load from. Request interception covers HTTP(S); the resolver rule also
-// covers WebSockets and anything else interception does not see (IP literals are still blocked by
-// interception, since resolver rules never apply to them).
-const ALLOWED_HOSTS = ['unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
-const launchArgs = [
-  '--host-resolver-rules=MAP * ~NOTFOUND, ' + ALLOWED_HOSTS.map((h) => `EXCLUDE ${h}`).join(', '),
-];
-// --no-sandbox is only needed when running as root in a container; gate it on CI.
-if (process.env.CI) launchArgs.push('--no-sandbox');
-const browser = await puppeteer.launch({ args: launchArgs });
-// Only the artifact's own directory may be read over file://.
-const artifactDir = pathToFileURL(path.dirname(inAbs) + path.sep).toString();
+const browser = await puppeteer.launch({ args: browserArgs, ...(process.env.DESIGN_CHROME_PATH ? {executablePath:process.env.DESIGN_CHROME_PATH} : {}) });
+const artifactDir = validated.root;
 try {
   const page = await browser.newPage();
 
-  // Block every outbound request except the artifact's directory and the pinned CDNs it may use.
-  await page.setRequestInterception(true);
-  page.on('request', (req) => {
-    const u = req.url();
-    const ok = u.startsWith(artifactDir) || u.startsWith('data:') || u.startsWith('blob:')
-      || u.startsWith('https://unpkg.com/')
-      || u.startsWith('https://fonts.googleapis.com/') || u.startsWith('https://fonts.gstatic.com/');
-    if (ok) req.continue(); else req.abort();
-  });
-  // A popup would be a fresh page with no interception installed: close it.
-  page.on('popup', (p) => { p.close().catch(() => {}); });
+  await isolatePage(page, artifactDir);
   await page.goto(pathToFileURL(inAbs).toString(), { waitUntil: 'networkidle0', timeout: 30000 });
 
   // If this is a deck, switch it to natural size so print CSS works
@@ -61,7 +42,6 @@ try {
   await new Promise((r) => setTimeout(r, 300));
 
   const opts = {
-    path: outAbs,
     printBackground: true,
     preferCSSPageSize: true,
   };
@@ -72,7 +52,7 @@ try {
     opts.format = 'A4';
   }
 
-  await page.pdf(opts);
+  saveNewFile(outAbs, await page.pdf(opts));
 } finally {
   await browser.close();
 }

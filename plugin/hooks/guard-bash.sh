@@ -40,6 +40,10 @@ deny() { echo "blocked by guard-bash: $1" >&2; exit 2; }
 
 if (( ${#cmd} > 20000 )); then deny "command longer than 20000 characters"; fi
 
+# Local mode: network mutations and general-purpose web servers are unavailable.
+if [[ "$cmd" =~ (^|[[:space:];&|])git[[:space:]]+push ]] || [[ "$cmd" =~ (^|[[:space:];&|])gh[[:space:]]+(pr|issue)[[:space:]]+(create|comment|edit|close|merge) ]] || [[ "$cmd" =~ gh[[:space:]]+repo[[:space:]]+fork ]]; then deny "remote mutations disabled in local design mode"; fi
+if [[ "$cmd" == *http.server* ]]; then deny "use the restricted preview server"; fi
+if [[ "$cmd" == *https://api.figma.com* ]]; then deny "remote ingestion disabled; use a local reference"; fi
 # ---------------------------------------------------------------- 0. normalise
 # ANSI-C quoting ($'\x2e\x2e') would hide '..' and absolute paths behind escapes that only
 # bash expands; nothing in the workflow uses it.
@@ -197,7 +201,7 @@ while IFS= read -r seg || [[ -n "$seg" ]]; do
   fi
   re_py="${W}python[0-9.]*([[:space:]]|$)"
   if [[ "$bare" =~ $re_py ]]; then
-    re_py_ok='^[[:space:]]*python3?[0-9.]*[[:space:]]+(-m[[:space:]]+http\.server[[:space:]]+[0-9]+[[:space:]]+--bind[[:space:]]+127\.0\.0\.1[[:space:]]+--directory[[:space:]]+artifacts/?[[:space:]]*$|(--version|-V)[[:space:]]*$)'
+    re_py_ok='^[[:space:]]*python3?[0-9.]*[[:space:]]+("?\$\{CLAUDE_PLUGIN_ROOT\}"?/scripts/secure-preview\.py[[:space:]]+[0-9]+[[:space:]]*$|-m[[:space:]]+http\.server[[:space:]]+[0-9]+[[:space:]]+--bind[[:space:]]+127\.0\.0\.1[[:space:]]+--directory[[:space:]]+artifacts/?[[:space:]]*$|(--version|-V)[[:space:]]*$)'
     if ! [[ "$bare" =~ $re_py_ok ]]; then deny "python: only 'python3 -m http.server <port> --bind 127.0.0.1 --directory artifacts' or --version"; fi
   fi
   re_shell="${W}(sh|bash|zsh|dash|ksh|fish|csh|tcsh|osascript|perl|ruby|php|deno|bun|tclsh|lua|swift|Rscript|awk|gawk|nawk|mawk|jq)([[:space:]]|$)"
